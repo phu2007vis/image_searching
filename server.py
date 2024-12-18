@@ -39,7 +39,7 @@ for feature_path in tqdm(Path("./static/img").glob("*.jpg")):
 features = np.array(features)
 
 
-@app.post("/")
+@app.post("/predict")
 async def index(request: ImageURLRequest):
 
     # Validate URL and fetch image (dummy logic, adjust as needed)
