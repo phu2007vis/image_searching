@@ -2,43 +2,66 @@ import numpy as np
 from PIL import Image
 from feature_extractor import FeatureExtractor
 from datetime import datetime
-from flask import Flask, request, render_template
 from pathlib import Path
+import pandas as pd
+from tqdm import tqdm
+from utils import get_image
+from fastapi import FastAPI, UploadFile, Form, HTTPException
+from fastapi.responses import JSONResponse
+from typing import List
+from pydantic import BaseModel
 
-app = Flask(__name__)
+# Define the input model for the request
+class ImageURLRequest(BaseModel):
+    url: str
 
-# Read image features
+app = FastAPI()
+
+# Initialize feature extractor
 fe = FeatureExtractor()
 features = []
 img_paths = []
-for feature_path in Path("./static/feature").glob("*.npy"):
-    features.append(np.load(feature_path))
-    img_paths.append(Path("./static/img") / (feature_path.stem + ".jpg"))
+
+# Load CSV map file
+csv_map_file = "map_url.csv"
+url_map = pd.read_csv(csv_map_file)
+
+def get_image_url(image_name):
+    return url_map[url_map.img_name == image_name].url.values[0]
+
+# Precompute features for existing images
+for feature_path in tqdm(Path("./static/img").glob("*.jpg")):
+    img_path = feature_path
+    img_paths.append(img_path)
+    img = Image.open(img_path)
+    query = fe.extract(img)
+    features.append(query)
 features = np.array(features)
 
 
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    if request.method == 'POST':
-        file = request.files['query_img']
+@app.post("/")
+async def index(request: ImageURLRequest):
 
-        # Save query image
-        img = Image.open(file.stream)  # PIL image
-        uploaded_img_path = "static/uploaded/" + datetime.now().isoformat().replace(":", ".") + "_" + file.filename
-        img.save(uploaded_img_path)
-
-        # Run search
-        query = fe.extract(img)
-        dists = np.linalg.norm(features-query, axis=1)  # L2 distances to features
-        ids = np.argsort(dists)[:30]  # Top 30 results
-        scores = [(dists[id], img_paths[id]) for id in ids]
-
-        return render_template('index.html',
-                               query_path=uploaded_img_path,
-                               scores=scores)
-    else:
-        return render_template('index.html')
+    # Validate URL and fetch image (dummy logic, adjust as needed)
+    try:
+        img = get_image(request.url)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="Image URL not found")
 
 
-if __name__=="__main__":
-    app.run("0.0.0.0")
+
+    query = fe.extract(img)
+
+    # Calculate distances and retrieve top 30 results
+    dists = np.linalg.norm(features - query, axis=1)
+    ids = np.argsort(dists)[:5]
+    scores = [(float(dists[id]), str(img_paths[id])) for id in ids]
+    
+    # Prepare URLs for the top images
+    imgs_url = [get_image_url(str(Path(image).name)) for _, image in scores]
+    
+    return JSONResponse(content={ "image_urls": imgs_url})
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
