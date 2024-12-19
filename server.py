@@ -25,9 +25,13 @@ img_paths = []
 # Load CSV map file
 csv_map_file = "map_url.csv"
 url_map = pd.read_csv(csv_map_file)
+csv_map_name_file = "map_name.csv" 
+url_map_name = pd.read_csv(csv_map_name_file)
 
 def get_image_url(image_name):
     return url_map[url_map.img_name == image_name].url.values[0]
+def get_product_name(url):
+    return url_map_name[url_map_name.url ==url].product_name.values[0]
 
 # Precompute features for existing images
 for feature_path in tqdm(Path("./static/img").glob("*.jpg")):
@@ -51,7 +55,7 @@ async def index(request: ImageURLRequest):
 
 
     query = fe.extract(img)
-
+   
     # Calculate distances and retrieve top 30 results
     dists = np.linalg.norm(features - query, axis=1)
     ids = np.argsort(dists)[:5]
@@ -59,8 +63,9 @@ async def index(request: ImageURLRequest):
     
     # Prepare URLs for the top images
     imgs_url = [get_image_url(str(Path(image).name)) for _, image in scores]
+    product_name  = [get_product_name(url) for url in imgs_url]
     
-    return JSONResponse(content={ "image_urls": imgs_url})
+    return JSONResponse(content={ "image_urls": imgs_url,"product_name":product_name})
 
 if __name__ == "__main__":
     import uvicorn
